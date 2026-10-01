@@ -1,7 +1,7 @@
 import queue
 import threading
 import unittest
-from core import Debouncer, SurroundingContext, surrounding_context
+from core import Debouncer, SurroundingContext, surrounding_context, preserve_boundary_whitespace
 
 
 class Harness:
@@ -9,9 +9,8 @@ class Harness:
         self.timers = {}
         self.next_id = 0
         self.callbacks = queue.Queue()
-        self.shown = []
-        self.controller = Debouncer(self.schedule, self.timers.pop, self.callbacks.put, correct,
-                                    lambda *args: self.shown.append(args))
+        self.applied = []
+        self.controller = Debouncer(self.schedule, self.timers.pop, self.callbacks.put, correct, self.applied.append)
 
     def schedule(self, delay, callback):
         assert delay == 800
@@ -34,7 +33,7 @@ class DebounceTests(unittest.TestCase):
         self.assertEqual(len(h.timers), 1)
         h.fire()
         h.finish()
-        self.assertEqual(h.controller.suggestion, "ab!")
+        self.assertEqual(h.applied, ["ab!"])
 
     def test_stale_result_is_discarded_even_when_text_returns_to_same_value(self):
         h = Harness()
@@ -43,7 +42,7 @@ class DebounceTests(unittest.TestCase):
         h.controller.change("b")
         h.controller.change("a")
         h.finish()
-        self.assertIsNone(h.controller.suggestion)
+        self.assertEqual(h.applied, [])
 
     def test_focus_loss_discards_result(self):
         h = Harness()
@@ -51,7 +50,7 @@ class DebounceTests(unittest.TestCase):
         h.fire()
         h.controller.invalidate()
         h.finish()
-        self.assertIsNone(h.controller.suggestion)
+        self.assertEqual(h.applied, [])
 
     def test_only_latest_debounced_request_is_queued(self):
         gate = threading.Event()
@@ -74,7 +73,7 @@ class DebounceTests(unittest.TestCase):
         h.finish()
         h.finish()
         self.assertEqual(calls, ["a", "c"])
-        self.assertEqual(h.controller.suggestion, "c!")
+        self.assertEqual(h.applied, ["c!"])
 
     def test_error_preserves_original(self):
         def fail(text, context):
@@ -84,8 +83,7 @@ class DebounceTests(unittest.TestCase):
         h.fire()
         h.finish()
         self.assertEqual(h.controller.text, "original")
-        self.assertIsNone(h.controller.suggestion)
-        self.assertIn("failed", h.shown[-1][1])
+        self.assertEqual(h.applied, [])
 
     def test_empty_and_oversized_text_do_not_run_inference(self):
         h = Harness()
@@ -105,11 +103,17 @@ class DebounceTests(unittest.TestCase):
         h.fire()
         h.controller.change("text", after)
         h.finish()
-        self.assertIsNone(h.controller.suggestion)
+        self.assertEqual(h.applied, [])
         h.fire()
         h.finish()
         self.assertEqual(received, [("text", before), ("text", after)])
-        self.assertEqual(h.controller.suggestion, "text!")
+        self.assertEqual(h.applied, ["text!"])
+
+    def test_existing_boundary_whitespace_is_preserved(self):
+        self.assertEqual(preserve_boundary_whitespace(" word ", "Word"), " Word ")
+        self.assertEqual(preserve_boundary_whitespace("\tword\n", " Word "), "\tWord\n")
+        self.assertEqual(preserve_boundary_whitespace("word", " Word"), " Word")
+        self.assertEqual(preserve_boundary_whitespace("word ", "Word   "), "Word ")
 
     def test_surrounding_context_is_bounded_and_excludes_selection(self):
         text = "a" * 600 + "selected" + "b" * 600
@@ -129,16 +133,15 @@ class DebounceTests(unittest.TestCase):
         output = "\n".join(logs.output)
         self.assertIn("Debounce scheduled", output)
         self.assertIn("Inference started", output)
-        self.assertIn("Suggestion ready", output)
+        self.assertIn("Apply automatically", output)
         self.assertNotIn("never-log-this-text", output)
 
-    def test_no_change_is_not_a_suggestion(self):
+    def test_unchanged_result_is_applied_to_finish_composition(self):
         h = Harness(lambda text, context: text)
         h.controller.change("fine")
         h.fire()
         h.finish()
-        self.assertIsNone(h.controller.suggestion)
-        self.assertIn("No correction", h.shown[-1][1])
+        self.assertEqual(h.applied, ["fine"])
 
 
 if __name__ == "__main__":

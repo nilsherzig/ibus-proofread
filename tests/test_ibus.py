@@ -112,20 +112,23 @@ class IBusIntegration(unittest.TestCase):
         for char in text:
             self.assertTrue(self.key(IBus.unicode_to_keyval(char)))
 
-    def test_suggestion_after_pause_tab_accepts(self):
+    def test_pause_auto_commits_without_preview_or_tab(self):
         self.type("dise Nachricht")
-        self.assertFalse(self.candidates)
+        self.assertFalse(self.commits)
         started = time.monotonic()
-        wait_until(lambda: bool(self.candidates))
-        self.assertGreater(time.monotonic() - started, 0.70)
-        self.assertEqual(self.candidates[-1], "diese Nachricht")
-        self.assertTrue(self.key(IBus.KEY_Tab))
         wait_until(lambda: bool(self.commits))
+        self.assertGreater(time.monotonic() - started, 0.70)
         self.assertEqual(self.commits, ["diese Nachricht"])
+        self.assertFalse(self.candidates)
+
+    def test_unchanged_text_also_auto_commits(self):
+        self.type("Nachricht")
+        wait_until(lambda: bool(self.commits))
+        self.assertEqual(self.commits, ["Nachricht"])
+        self.assertFalse(self.candidates)
 
     def test_enter_commits_original(self):
         self.type("dise Nachricht")
-        wait_until(lambda: bool(self.candidates))
         self.assertFalse(self.key(IBus.KEY_Return))
         wait_until(lambda: bool(self.commits))
         self.assertEqual(self.commits, ["dise Nachricht"])
@@ -140,11 +143,9 @@ class IBusIntegration(unittest.TestCase):
         wait_until(lambda: self.context.needs_surrounding_text())
         self.context.set_surrounding_text(IBus.Text.new_from_string("Vorher.  Nachher."), 8, 8)
         self.type("dise")
-        wait_until(lambda: bool(self.candidates))
-        self.assertEqual(self.candidates[-1], "diese [context]")
-        self.key(IBus.KEY_Tab)
         wait_until(lambda: bool(self.commits))
         self.assertEqual(self.commits, ["diese [context]"])
+        self.assertFalse(self.candidates)
 
     def test_field_entry_and_type_decisions_are_logged_without_text(self):
         self.context.set_content_type(IBus.InputPurpose.URL, IBus.InputHints.NO_SPELLCHECK)
@@ -183,9 +184,8 @@ class IBusIntegration(unittest.TestCase):
                 self.assertFalse(self.commits)
                 self.assertFalse(self.candidates)
 
-    def test_excluding_current_field_commits_original_not_suggestion(self):
+    def test_excluding_current_field_commits_original_and_cancels_correction(self):
         self.type("dise")
-        wait_until(lambda: bool(self.candidates))
         self.context.set_content_type(IBus.InputPurpose.FREE_FORM, IBus.InputHints.NO_SPELLCHECK)
         self.assertFalse(self.key(IBus.KEY_Tab))
         wait_until(lambda: bool(self.commits))
@@ -196,16 +196,16 @@ class IBusIntegration(unittest.TestCase):
     def test_word_completion_hint_does_not_disable_normal_text(self):
         self.context.set_content_type(IBus.InputPurpose.FREE_FORM, IBus.InputHints.WORD_COMPLETION)
         self.type("dise")
-        wait_until(lambda: bool(self.candidates))
-        self.assertEqual(self.candidates[-1], "diese")
+        wait_until(lambda: bool(self.commits))
+        self.assertEqual(self.commits, ["diese"])
+        self.assertFalse(self.candidates)
 
-    def test_escape_keeps_original(self):
+    def test_escape_commits_original_and_passes_through(self):
         self.type("dise")
-        wait_until(lambda: bool(self.candidates))
-        self.assertTrue(self.key(IBus.KEY_Escape))
-        self.key(IBus.KEY_Return)
+        self.assertFalse(self.key(IBus.KEY_Escape))
         wait_until(lambda: bool(self.commits))
         self.assertEqual(self.commits, ["dise"])
+        self.assertFalse(self.candidates)
 
 
 if __name__ == "__main__":

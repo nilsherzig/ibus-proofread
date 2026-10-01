@@ -1,6 +1,6 @@
 # ibus-proofread
 
-A local proofreading demo using **unsloth/Gemma-4-E2B-it Q4_K_M**, llama.cpp with Vulkan, and an **800 ms typing debounce**. It includes a standalone GTK sandbox and a temporary IBus input method for GNOME/Wayland.
+A local auto-correction demo using **unsloth/Gemma-4-E2B-it Q4_K_M**, llama.cpp with Vulkan, and an **800 ms typing debounce**. It includes a standalone GTK sandbox and a temporary IBus input method for GNOME/Wayland.
 
 ## Try the sandbox
 
@@ -11,9 +11,9 @@ cd ~/Documents/projects/ibus-proofread
 nix run . -- demo
 ```
 
-Type `Ich habe dise Nachicht geschriben.` and pause. After 800 ms without changes, local inference starts. Its runtime is added to that delay. The corrected text appears below the editor; **Tab** or the accept button applies it. **Escape** dismisses it. Closing the window stops the owned inference server.
+Type `Ich habe dise Nachicht geschriben.` and pause. After 800 ms without changes, local inference starts. Its runtime is added to that delay. The corrected text replaces the editor contents automatically, with no preview or confirmation. **Escape** cancels a pending check. Closing the window stops the owned inference server.
 
-The sandbox checks its entire editor contents, up to 1200 characters. Cursor changes reschedule checking; leaving the editor discards suggestions and outstanding results.
+The sandbox checks its entire editor contents, up to 1200 characters. Cursor changes reschedule checking; leaving the editor discards outstanding results. Applying a correction does not schedule another check of the same text.
 
 ## Try the IBus input method
 
@@ -24,15 +24,14 @@ nix run . -- ibus
 Wait for the `Demo engine active` log message, then focus an editable field in an application using IBus. The engine is registered and activated for this process's lifetime; it does not install a persistent GNOME input source or change your saved input-source settings. GNOME input-source switching can switch away from the demo.
 
 - Printable characters and spaces build an underlined **preedit composition**.
-- After an 800 ms pause, a correction appears in the IBus candidate popup.
-- **Tab** or clicking the candidate commits the correction.
-- **Enter** commits the original composition and passes Enter to the application.
-- **Escape** dismisses the suggestion without losing the original composition.
+- After an 800 ms pause and local inference, the correction is committed automatically. Unchanged results also commit the original composition.
+- There is no candidate popup, preview or Tab confirmation.
+- **Enter**, **Tab** and **Escape** before completion commit the original composition, cancel its pending correction and pass the key to the application.
 - **Backspace** edits the composition. Navigation and modifier shortcuts commit the original before passing through.
-- Focus loss asks the application to commit original preedit, never an unconfirmed correction.
+- Focus loss asks the application to commit original preedit and invalidates outstanding corrections.
 - URL, email, digits, number, phone, terminal, password and PIN fields bypass the engine when reported by the application.
 - The `no-spellcheck`, `private` and `hidden-text` hints also bypass the engine. A word-completion hint alone does not disable proofreading: it does not reliably identify live autocomplete fields.
-- Switching an existing composition to a nonsensitive excluded field commits its original text and dismisses corrections. Sensitive fields clear the composition. Returning to a normal field enables proofreading again.
+- Switching an existing composition to a nonsensitive excluded field commits its original text and cancels pending corrections. Sensitive fields clear the composition. Returning to a normal field enables proofreading again.
 
 Stop with **Ctrl+C in the launching terminal**. On normal shutdown, the previous IBus engine is restored if the demo is still active. A forced kill cannot run that cleanup; switch to your normal input source if necessary.
 
@@ -40,7 +39,7 @@ This is a composition-based demo, not an editor for previously committed or sele
 
 ## Surrounding text as context
 
-The IBus engine requests surrounding-text updates from the application. It sends up to **400 characters before and 400 after** the cursor/selection alongside the current composition. Selection contents are excluded from that context. The prompt asks Gemma to use this only for interpreting the composition and deciding spacing/punctuation; only the current composition is offered as replacement text. The engine never deletes or rewrites surrounding text.
+The IBus engine requests surrounding-text updates from the application. It sends up to **400 characters before and 400 after** the cursor/selection alongside the current composition. Selection contents are excluded from that context. The prompt asks Gemma to use this only for interpreting the composition and deciding spacing/punctuation; only the current composition is committed as replacement text. The engine never deletes or rewrites surrounding text.
 
 Context or cursor/selection changes invalidate pending results and restart the debounce for a nonempty composition. Focus loss clears cached context. Excluded fields ignore context updates entirely. Applications without surrounding-text support still work, but supply no additional context. The standalone sandbox does not have an external surrounding-text source.
 
@@ -66,7 +65,9 @@ The first launch downloads the text GGUF (approximately 3.1 GB) from:
 
 It is cached under `${XDG_DATA_HOME:-~/.local/share}/ibus-proofread/REVISION/`. Downloads are atomic. No vision/audio projector is needed for this text-only demo. The Nix flake pins dependencies, including a Vulkan-enabled llama.cpp. GPU offload is requested; llama.cpp may fall back to CPU on other hardware.
 
-Each launch owns one loopback-only server with a random API key. Typed text is sent only to that local server; it is not uploaded to Hugging Face. Server diagnostics use a temporary log, removed on shutdown. Suggestions are not automatically applied and can still contain model mistakes. The prompt explicitly requests spelling, punctuation and uppercase/lowercase corrections, including German noun/sentence capitalization and incorrectly capitalized verbs/adjectives.
+Each launch owns one loopback-only server with a random API key. Typed text is sent only to that local server; it is not uploaded to Hugging Face. Server diagnostics use a temporary log, removed on shutdown. **Corrections are applied automatically and can contain model mistakes.** The prompt explicitly requests spelling, punctuation and uppercase/lowercase corrections, including German noun/sentence capitalization and incorrectly capitalized verbs/adjectives.
+
+Boundary whitespace is significant. Gemma is instructed to add a leading space when a new sentence needs separation from the previous sentence, avoid duplicate separators, and distinguish sentence/word continuations using context. Existing leading/trailing whitespace is preserved by the inference client even if the model omits it; model-added separators remain intact when none existed. Previously committed context is never changed.
 
 Only one inference runs at a time, with at most one latest debounced request queued. Text changes and focus loss invalidate older results. Inference failures preserve the original text.
 
@@ -87,13 +88,13 @@ nix develop --command python tests/run.py
 PROOFREAD_TEST_MODEL=1 nix develop --command python tests/run.py
 ```
 
-The runner owns a virtual X display and a private session bus/IBus daemon. It does not inject keys into the real desktop. Tests cover debounce replacement, stale-result invalidation including context changes, bounded queuing, failures, metadata-only logs, GTK suggestion acceptance/dismissal, and real IBus activation/key processing/candidate commits/field exclusions/surrounding-text delivery. The real-model test checks spelling and German capitalization. The real-model test expects the cached default GGUF; run `download` first.
+The runner owns a virtual X display and a private session bus/IBus daemon. It does not inject keys into the real desktop. Tests cover debounce replacement, stale-result invalidation including context changes, bounded queuing, failures, metadata-only logs, boundary-whitespace preservation, GTK automatic replacement/cancellation, and real IBus activation/automatic commits/field exclusions/surrounding-text delivery. The real-model test checks spelling, German capitalization and sentence-boundary spacing. The real-model test expects the cached default GGUF; run `download` first.
 
 ## Flow
 
 ```text
 composition or context changed:
-    invalidate old suggestion and results
+    invalidate outstanding results
     restart the 800 ms timer
 
 timer fires:
@@ -101,7 +102,7 @@ timer fires:
 
 result arrives:
     if snapshot is still current:
-        display suggestion
+        automatically commit/apply the correction without a preview
     otherwise:
         discard it
 ```

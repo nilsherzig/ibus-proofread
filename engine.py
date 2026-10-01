@@ -29,29 +29,22 @@ def make_engine(correct):
             self.context = SurroundingContext()
             self.context_position = None
             self.debounce = Debouncer(
-                GLib.timeout_add, GLib.source_remove, GLib.idle_add, correct, self.show,
+                GLib.timeout_add, GLib.source_remove, GLib.idle_add, correct, self.commit,
             )
-
-        def show(self, suggestion, status):
-            self.update_auxiliary_text(IBus.Text.new_from_string(status), bool(status))
-            table = IBus.LookupTable.new(1, 0, False, False)
-            if suggestion:
-                table.append_candidate(IBus.Text.new_from_string(suggestion))
-            self.update_lookup_table(table, bool(suggestion))
 
         def changed(self):
             text = IBus.Text.new_from_string(self.buffer)
             text.append_attribute(IBus.AttrType.UNDERLINE, IBus.AttrUnderline.SINGLE, 0, len(self.buffer))
-            # Commit original preedit on focus loss; never commit an unconfirmed suggestion.
+            # Focus loss commits original preedit and invalidates in-flight corrections.
             self.update_preedit_text_with_mode(
                 text, len(self.buffer), bool(self.buffer), IBus.PreeditFocusMode.COMMIT,
             )
             self.debounce.change(self.buffer, self.context)
 
-        def commit(self, corrected=False):
-            text = self.debounce.suggestion if corrected else self.buffer
+        def commit(self, correction=None):
+            text = self.buffer if correction is None else correction
             if text:
-                logger.info("Commit %s: chars=%d", "suggestion" if corrected else "original", len(text))
+                logger.info("Commit %s: chars=%d", "automatic result" if correction is not None else "original", len(text))
                 self.commit_text(IBus.Text.new_from_string(text))
             self.buffer = ""
             self.changed()
@@ -65,13 +58,6 @@ def make_engine(correct):
             if state & (IBus.ModifierType.CONTROL_MASK | IBus.ModifierType.MOD1_MASK | IBus.ModifierType.MOD4_MASK):
                 self.commit()
                 return False
-            if keyval in (IBus.KEY_Tab, IBus.KEY_ISO_Left_Tab) and self.debounce.suggestion:
-                self.commit(corrected=True)
-                return True
-            if keyval == IBus.KEY_Escape and self.buffer:
-                self.debounce.invalidate()
-                self.show(None, "Suggestion dismissed; Enter commits the original.")
-                return True
             if keyval in (IBus.KEY_Return, IBus.KEY_KP_Enter):
                 self.commit()
                 return False
@@ -86,13 +72,9 @@ def make_engine(correct):
                 self.buffer += char
                 self.changed()
                 return True
-            # Navigation, Delete, Tab without suggestion, etc. act on committed text.
+            # Navigation, Delete, Tab and Escape act on original committed text.
             self.commit()
             return False
-
-        def do_candidate_clicked(self, index, button, state):
-            if index == 0 and button == 1 and self.debounce.suggestion:
-                self.commit(corrected=True)
 
         def do_reset(self):
             self.buffer = ""
@@ -129,7 +111,7 @@ def make_engine(correct):
                         bool(capabilities & IBus.Capabilite.SURROUNDING_TEXT))
 
         def do_focus_out(self):
-            logger.info("Focus lost: discard suggestion and outstanding results")
+            logger.info("Focus lost: discard outstanding results")
             # The input context commits preedit according to COMMIT mode.
             self.buffer = ""
             self.context = SurroundingContext()
@@ -137,7 +119,6 @@ def make_engine(correct):
             self.field_description = None
             self.bypass = False
             self.debounce.invalidate()
-            self.show(None, "")
 
         def do_disable(self):
             self.do_focus_out()
@@ -161,7 +142,7 @@ def make_engine(correct):
                     self.do_reset()
                 else:
                     # A field can change its hints while composing. Keep original
-                    # input, never silently discard it or accept a correction.
+                    # input, never silently discard it or apply a pending correction.
                     self.commit()
             self.bypass = bypass
             if not bypass:
@@ -185,7 +166,7 @@ def run_engine(correct):
         "0.1", "MIT", "", "", "", "",
     )
     component.add_engine(IBus.EngineDesc.new(
-        ENGINE_NAME, "Gemma proofreading demo", "800 ms local spelling suggestions",
+        ENGINE_NAME, "Gemma proofreading demo", "800 ms local automatic spelling correction",
         "de", "MIT", "", "", "de",
     ))
     if not bus.register_component(component):
@@ -196,7 +177,7 @@ def run_engine(correct):
         try:
             if not bus.set_global_engine_async_finish(result):
                 raise RuntimeError("Could not activate demo input method")
-            logger.info("Demo engine active: Tab accepts, Enter commits original, Ctrl+C stops")
+            logger.info("Demo engine active: automatic correction after pause, Ctrl+C stops")
         except Exception as exc:
             activation_errors.append(exc)
             loop.quit()
