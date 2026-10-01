@@ -1,6 +1,7 @@
 """Own a loopback-only llama.cpp server and a pinned, cached GGUF download."""
 from contextlib import contextmanager
 import json
+import logging
 import os
 from pathlib import Path
 import secrets
@@ -13,6 +14,7 @@ import urllib.request
 REPO = "unsloth/gemma-4-E2B-it-GGUF"
 REVISION = "0314792d7f1f7e229411f620751375812bb9faf2"
 FILENAME = "gemma-4-E2B-it-Q4_K_M.gguf"
+logger = logging.getLogger("proofread.backend")
 
 
 def model_path():
@@ -49,7 +51,8 @@ def server(model, binary="llama-server"):
         port = sock.getsockname()[1]
     key = secrets.token_hex(32)
     url = f"http://127.0.0.1:{port}"
-    # Temporary log: never retain prompts or generated text on disk.
+    logger.info("Starting local server: GPU offload requested, context=4096")
+    # Diagnostics are temporary and removed when the owned server exits.
     with tempfile.TemporaryFile() as log:
         process = subprocess.Popen([
             binary, "-m", str(model), "--host", "127.0.0.1", "--port", str(port),
@@ -71,9 +74,11 @@ def server(model, binary="llama-server"):
                     time.sleep(0.2)
             else:
                 raise RuntimeError("Model startup timed out")
+            logger.info("Local inference server ready")
             yield url, key
         finally:
             if process.poll() is None:
+                logger.info("Stopping owned inference server")
                 process.terminate()
                 try:
                     process.wait(timeout=10)

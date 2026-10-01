@@ -1,11 +1,20 @@
 """Temporary IBus engine. Composition is owned by the engine, not reconstructed."""
+import logging
 import gi
 
 gi.require_version("IBus", "1.0")
 from gi.repository import GLib, IBus
-from core import Debouncer, MAX_CHARS
+from core import Debouncer, MAX_CHARS, SurroundingContext, surrounding_context
 
 ENGINE_NAME = "gemma-proofread-demo"
+logger = logging.getLogger("proofread.ibus")
+BYPASS_PURPOSES = {
+    IBus.InputPurpose.URL, IBus.InputPurpose.EMAIL, IBus.InputPurpose.DIGITS,
+    IBus.InputPurpose.NUMBER, IBus.InputPurpose.PHONE, IBus.InputPurpose.TERMINAL,
+    IBus.InputPurpose.PASSWORD, IBus.InputPurpose.PIN,
+}
+SENSITIVE_HINTS = IBus.InputHints.PRIVATE | IBus.InputHints.HIDDEN_TEXT
+BYPASS_HINTS = IBus.InputHints.NO_SPELLCHECK | SENSITIVE_HINTS
 
 
 def make_engine(correct):
@@ -15,7 +24,10 @@ def make_engine(correct):
         def __init__(self, **kwargs):
             super().__init__(**kwargs)
             self.buffer = ""
-            self.private = False
+            self.bypass = False
+            self.field_description = None
+            self.context = SurroundingContext()
+            self.context_position = None
             self.debounce = Debouncer(
                 GLib.timeout_add, GLib.source_remove, GLib.idle_add, correct, self.show,
             )
@@ -34,11 +46,12 @@ def make_engine(correct):
             self.update_preedit_text_with_mode(
                 text, len(self.buffer), bool(self.buffer), IBus.PreeditFocusMode.COMMIT,
             )
-            self.debounce.change(self.buffer)
+            self.debounce.change(self.buffer, self.context)
 
         def commit(self, corrected=False):
             text = self.debounce.suggestion if corrected else self.buffer
             if text:
+                logger.info("Commit %s: chars=%d", "suggestion" if corrected else "original", len(text))
                 self.commit_text(IBus.Text.new_from_string(text))
             self.buffer = ""
             self.changed()
@@ -46,7 +59,8 @@ def make_engine(correct):
         def do_process_key_event(self, keyval, keycode, state):
             if state & IBus.ModifierType.RELEASE_MASK:
                 return False
-            if self.private:
+            if self.bypass:
+                logger.debug("Key passed through: field excluded")
                 return False
             if state & (IBus.ModifierType.CONTROL_MASK | IBus.ModifierType.MOD1_MASK | IBus.ModifierType.MOD4_MASK):
                 self.commit()
@@ -84,9 +98,44 @@ def make_engine(correct):
             self.buffer = ""
             self.changed()
 
+        def do_enable(self):
+            self.get_surrounding_text()  # Ask the client to provide context updates.
+
+        def do_focus_in(self):
+            logger.info("Field entered: %s", self.field_description or "type missing (not reported yet)")
+            if not self.bypass:
+                self.get_surrounding_text()
+
+        def do_set_surrounding_text(self, text, cursor, anchor):
+            if self.bypass:
+                logger.debug("Ignore surrounding text: field excluded")
+                return
+            try:
+                context = surrounding_context(text.get_text(), cursor, anchor)
+            except ValueError:
+                logger.warning("Ignore invalid surrounding-text positions")
+                context = SurroundingContext()
+            position = (cursor, anchor, context)
+            if position == self.context_position:
+                return
+            self.context, self.context_position = context, position
+            logger.debug("Context changed: before=%d after=%d cursor=%d anchor=%d",
+                         len(context.before), len(context.after), cursor, anchor)
+            if self.buffer:
+                self.debounce.change(self.buffer, context)
+
+        def do_set_capabilities(self, capabilities):
+            logger.info("Client supports surrounding text: %s",
+                        bool(capabilities & IBus.Capabilite.SURROUNDING_TEXT))
+
         def do_focus_out(self):
+            logger.info("Focus lost: discard suggestion and outstanding results")
             # The input context commits preedit according to COMMIT mode.
             self.buffer = ""
+            self.context = SurroundingContext()
+            self.context_position = None
+            self.field_description = None
+            self.bypass = False
             self.debounce.invalidate()
             self.show(None, "")
 
@@ -94,11 +143,29 @@ def make_engine(correct):
             self.do_focus_out()
 
         def do_set_content_type(self, purpose, hints):
-            private = purpose in (IBus.InputPurpose.PASSWORD, IBus.InputPurpose.PIN)
-            private = private or bool(hints & IBus.InputHints.PRIVATE)
-            if private:
-                self.do_reset()
-            self.private = private
+            sensitive = purpose in (IBus.InputPurpose.PASSWORD, IBus.InputPurpose.PIN)
+            sensitive = sensitive or bool(hints & SENSITIVE_HINTS)
+            bypass = purpose in BYPASS_PURPOSES or bool(hints & BYPASS_HINTS)
+            try:
+                purpose_name = IBus.InputPurpose(purpose).value_nick
+            except ValueError:
+                purpose_name = str(purpose)
+            hint_names = ",".join(IBus.InputHints(hints).value_nicks) or "none"
+            self.field_description = f"purpose={purpose_name} hints={hint_names} (reported)"
+            logger.info("Field purpose=%s hints=%s: %s", purpose_name, hint_names,
+                        "BYPASS" if bypass else "proofreading enabled")
+            if bypass:
+                self.context = SurroundingContext()
+                self.context_position = None
+                if sensitive:
+                    self.do_reset()
+                else:
+                    # A field can change its hints while composing. Keep original
+                    # input, never silently discard it or accept a correction.
+                    self.commit()
+            self.bypass = bypass
+            if not bypass:
+                self.get_surrounding_text()
 
     return ProofreadEngine
 
@@ -129,7 +196,7 @@ def run_engine(correct):
         try:
             if not bus.set_global_engine_async_finish(result):
                 raise RuntimeError("Could not activate demo input method")
-            print("IBus demo active. Tab accepts a suggestion; Enter commits original. Ctrl+C here stops.")
+            logger.info("Demo engine active: Tab accepts, Enter commits original, Ctrl+C stops")
         except Exception as exc:
             activation_errors.append(exc)
             loop.quit()
@@ -145,4 +212,5 @@ def run_engine(correct):
         if previous and bus.is_connected():
             current = bus.get_global_engine()
             if current and current.get_name() == ENGINE_NAME:
+                logger.info("Restoring previous engine: %s", previous.get_name())
                 bus.set_global_engine(previous.get_name())

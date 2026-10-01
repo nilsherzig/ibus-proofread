@@ -1,11 +1,11 @@
 import queue
 import threading
 import unittest
-from core import Debouncer
+from core import Debouncer, SurroundingContext, surrounding_context
 
 
 class Harness:
-    def __init__(self, correct=lambda text: text + "!"):
+    def __init__(self, correct=lambda text, context: text + "!"):
         self.timers = {}
         self.next_id = 0
         self.callbacks = queue.Queue()
@@ -57,7 +57,7 @@ class DebounceTests(unittest.TestCase):
         gate = threading.Event()
         calls = []
 
-        def correct(text):
+        def correct(text, context):
             calls.append(text)
             if text == "a":
                 gate.wait(timeout=2)
@@ -77,7 +77,7 @@ class DebounceTests(unittest.TestCase):
         self.assertEqual(h.controller.suggestion, "c!")
 
     def test_error_preserves_original(self):
-        def fail(text):
+        def fail(text, context):
             raise RuntimeError("offline")
         h = Harness(fail)
         h.controller.change("original")
@@ -93,8 +93,47 @@ class DebounceTests(unittest.TestCase):
             h.controller.change(text)
             self.assertFalse(h.timers)
 
+    def test_context_is_forwarded_and_context_change_invalidates_result(self):
+        received = []
+        def correct(text, context):
+            received.append((text, context))
+            return text + "!"
+        h = Harness(correct)
+        before = SurroundingContext("Previous sentence. ", " Next sentence.")
+        after = SurroundingContext("Different sentence. ", " Next sentence.")
+        h.controller.change("text", before)
+        h.fire()
+        h.controller.change("text", after)
+        h.finish()
+        self.assertIsNone(h.controller.suggestion)
+        h.fire()
+        h.finish()
+        self.assertEqual(received, [("text", before), ("text", after)])
+        self.assertEqual(h.controller.suggestion, "text!")
+
+    def test_surrounding_context_is_bounded_and_excludes_selection(self):
+        text = "a" * 600 + "selected" + "b" * 600
+        expected = SurroundingContext("a" * 400, "b" * 400)
+        self.assertEqual(surrounding_context(text, 600, 608), expected)
+        self.assertEqual(surrounding_context(text, 608, 600), expected)
+        self.assertEqual(surrounding_context("Grüße 🙂!", 7, 7), SurroundingContext("Grüße 🙂", "!"))
+        with self.assertRaises(ValueError):
+            surrounding_context("short", 6, 0)
+
+    def test_debug_logs_explain_decisions_without_text(self):
+        h = Harness()
+        with self.assertLogs("proofread.debounce", level="DEBUG") as logs:
+            h.controller.change("never-log-this-text")
+            h.fire()
+            h.finish()
+        output = "\n".join(logs.output)
+        self.assertIn("Debounce scheduled", output)
+        self.assertIn("Inference started", output)
+        self.assertIn("Suggestion ready", output)
+        self.assertNotIn("never-log-this-text", output)
+
     def test_no_change_is_not_a_suggestion(self):
-        h = Harness(lambda text: text)
+        h = Harness(lambda text, context: text)
         h.controller.change("fine")
         h.fire()
         h.finish()

@@ -52,7 +52,10 @@ class IBusIntegration(unittest.TestCase):
         cls.engine_log = tempfile.TemporaryFile()
         cls.engine = subprocess.Popen([
             sys.executable, "-u", "-c",
-            "from engine import run_engine; run_engine(lambda t: t.replace('dise', 'diese'))",
+            "import logging; logging.basicConfig(level=logging.DEBUG); "
+            "from engine import run_engine; "
+            "run_engine(lambda t, c: t.replace('dise', 'diese') + "
+            "(' [context]' if c.before == 'Vorher. ' and c.after == ' Nachher.' else ''))",
         ], cwd=ROOT, env=env, stdout=cls.engine_log, stderr=cls.engine_log)
         try:
             wait_until(lambda: "gemma-proofread-demo" in activated)
@@ -83,7 +86,8 @@ class IBusIntegration(unittest.TestCase):
         self.context.connect("commit-text", lambda _, text: self.commits.append(text.get_text()))
         self.context.connect("update-lookup-table", self.lookup)
         self.context.set_capabilities(int(IBus.Capabilite.PREEDIT_TEXT | IBus.Capabilite.LOOKUP_TABLE |
-                                          IBus.Capabilite.AUXILIARY_TEXT | IBus.Capabilite.FOCUS))
+                                          IBus.Capabilite.AUXILIARY_TEXT | IBus.Capabilite.FOCUS |
+                                          IBus.Capabilite.SURROUNDING_TEXT))
         self.context.focus_in()
         self.context.set_engine("gemma-proofread-demo")
         wait_until(lambda: self.context.get_engine() is not None)
@@ -131,6 +135,69 @@ class IBusIntegration(unittest.TestCase):
         self.assertFalse(self.key(IBus.KEY_a))
         self.assertFalse(self.commits)
         self.assertFalse(self.candidates)
+
+    def test_surrounding_text_reaches_inference_without_being_replaced(self):
+        wait_until(lambda: self.context.needs_surrounding_text())
+        self.context.set_surrounding_text(IBus.Text.new_from_string("Vorher.  Nachher."), 8, 8)
+        self.type("dise")
+        wait_until(lambda: bool(self.candidates))
+        self.assertEqual(self.candidates[-1], "diese [context]")
+        self.key(IBus.KEY_Tab)
+        wait_until(lambda: bool(self.commits))
+        self.assertEqual(self.commits, ["diese [context]"])
+
+    def test_field_entry_and_type_decisions_are_logged_without_text(self):
+        self.context.set_content_type(IBus.InputPurpose.URL, IBus.InputHints.NO_SPELLCHECK)
+        self.assertFalse(self.key(IBus.KEY_a))
+        self.engine_log.seek(0)
+        output = self.engine_log.read().decode()
+        self.assertIn("Field entered:", output)
+        self.assertIn("type missing (not reported yet)", output)
+        self.assertIn("purpose=url", output)
+        self.assertIn("BYPASS", output)
+        self.assertNotIn("dise", output)
+
+    def test_special_field_types_pass_keys_through(self):
+        for purpose in (IBus.InputPurpose.URL, IBus.InputPurpose.EMAIL,
+                        IBus.InputPurpose.DIGITS, IBus.InputPurpose.NUMBER,
+                        IBus.InputPurpose.PHONE, IBus.InputPurpose.TERMINAL,
+                        IBus.InputPurpose.PIN):
+            with self.subTest(purpose=purpose):
+                self.context.set_content_type(purpose, 0)
+                self.assertFalse(self.key(IBus.KEY_a))
+                self.assertFalse(self.key(IBus.KEY_Tab))
+                self.assertFalse(self.commits)
+                self.assertFalse(self.candidates)
+        self.context.set_content_type(IBus.InputPurpose.FREE_FORM, 0)
+        self.assertTrue(self.key(IBus.KEY_a))
+        self.key(IBus.KEY_Return)
+        wait_until(lambda: bool(self.commits))
+        self.assertEqual(self.commits, ["a"])
+
+    def test_field_hints_pass_keys_through(self):
+        for hint in (IBus.InputHints.NO_SPELLCHECK, IBus.InputHints.PRIVATE,
+                     IBus.InputHints.HIDDEN_TEXT):
+            with self.subTest(hint=hint):
+                self.context.set_content_type(IBus.InputPurpose.FREE_FORM, hint)
+                self.assertFalse(self.key(IBus.KEY_a))
+                self.assertFalse(self.commits)
+                self.assertFalse(self.candidates)
+
+    def test_excluding_current_field_commits_original_not_suggestion(self):
+        self.type("dise")
+        wait_until(lambda: bool(self.candidates))
+        self.context.set_content_type(IBus.InputPurpose.FREE_FORM, IBus.InputHints.NO_SPELLCHECK)
+        self.assertFalse(self.key(IBus.KEY_Tab))
+        wait_until(lambda: bool(self.commits))
+        self.assertEqual(self.commits, ["dise"])
+        self.context.set_content_type(IBus.InputPurpose.FREE_FORM, IBus.InputHints.SPELLCHECK)
+        self.assertTrue(self.key(IBus.KEY_a))
+
+    def test_word_completion_hint_does_not_disable_normal_text(self):
+        self.context.set_content_type(IBus.InputPurpose.FREE_FORM, IBus.InputHints.WORD_COMPLETION)
+        self.type("dise")
+        wait_until(lambda: bool(self.candidates))
+        self.assertEqual(self.candidates[-1], "diese")
 
     def test_escape_keeps_original(self):
         self.type("dise")

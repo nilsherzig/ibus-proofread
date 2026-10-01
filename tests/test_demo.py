@@ -3,7 +3,7 @@ import os
 import time
 import unittest
 from backend import model_path, server
-from core import Corrector
+from core import Corrector, SurroundingContext
 from demo import DemoWindow
 from gi.repository import Gdk, GLib, Gtk
 
@@ -21,7 +21,7 @@ def pump_until(predicate, timeout=10):
 
 class DemoTests(unittest.TestCase):
     def setUp(self):
-        self.window = DemoWindow(lambda text: text.replace("dise", "diese"))
+        self.window = DemoWindow(lambda text, context: text.replace("dise", "diese"))
         self.window.show_all()
 
     def tearDown(self):
@@ -57,6 +57,11 @@ class DemoTests(unittest.TestCase):
             pump_until(lambda: window.debounce.suggestion is not None, timeout=60)
             self.assertEqual(window.debounce.suggestion, "Ich habe diese Nachricht geschrieben.")
             print(f"Real Gemma GTK suggestion: {time.monotonic() - started:.2f}s including debounce")
+            corrected = Corrector(url, key)(
+                "ich habe eine nachricht Geschrieben.",
+                SurroundingContext("Vorher stand: alles ist gut. ", " Danach geht es weiter."),
+            )
+            self.assertEqual(corrected, "Ich habe eine Nachricht geschrieben.")
 
 
 if __name__ == "__main__":
