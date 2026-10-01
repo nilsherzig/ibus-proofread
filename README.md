@@ -27,7 +27,7 @@ Wait for the `Demo engine active` log message, then focus an editable field in a
 - After an 800 ms pause and local inference, the correction is committed automatically. Unchanged results also commit the original composition.
 - There is no candidate popup, preview or Tab confirmation.
 - **Enter**, **Tab** and **Escape** before completion commit the original composition, cancel its pending correction and pass the key to the application.
-- **Backspace** edits the composition. Navigation and modifier shortcuts commit the original before passing through.
+- **Backspace** edits the composition. Printable punctuation stays in the composition. Modifier keys alone (Shift, Caps Lock, AltGr, Control, etc.) pass through without committing it. Actual navigation and modifier shortcuts commit the original before passing through.
 - Focus loss asks the application to commit original preedit and invalidates outstanding corrections.
 - URL, email, digits, number, phone, terminal, password and PIN fields bypass the engine when reported by the application.
 - The `no-spellcheck`, `private` and `hidden-text` hints also bypass the engine. A word-completion hint alone does not disable proofreading: it does not reliably identify live autocomplete fields.
@@ -88,7 +88,7 @@ nix develop --command python tests/run.py
 PROOFREAD_TEST_MODEL=1 nix develop --command python tests/run.py
 ```
 
-The runner owns a virtual X display and a private session bus/IBus daemon. It does not inject keys into the real desktop. Tests cover debounce replacement, stale-result invalidation including context changes, bounded queuing, failures, metadata-only logs, boundary-whitespace preservation, GTK automatic replacement/cancellation, and real IBus activation/automatic commits/field exclusions/surrounding-text delivery. The real-model test checks spelling, German capitalization and sentence-boundary spacing. The real-model test expects the cached default GGUF; run `download` first.
+The runner owns a virtual X display and a private session bus/IBus daemon. It does not inject keys into the real desktop. Tests cover debounce replacement, stale-result invalidation including context changes, bounded queuing, failures, metadata-only logs, boundary-whitespace preservation, GTK automatic replacement/cancellation, and real IBus activation/automatic commits/field exclusions/surrounding-text delivery, and physical modifier sequences for punctuation/capital letters versus actual shortcuts and navigation. The real-model test checks spelling, German capitalization and sentence-boundary spacing. The real-model test expects the cached default GGUF; run `download` first.
 
 ## Flow
 

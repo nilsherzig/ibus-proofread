@@ -86,6 +86,8 @@ class DemoTests(unittest.TestCase):
                 "ich komme morgen. ", SurroundingContext("Das war gut.", ""),
             )
             self.assertEqual(boundary, " Ich komme morgen. ")
+            question = Corrector(url, key)("Ist dise Nachicht richtig?")
+            self.assertEqual(question, "Ist diese Nachricht richtig?")
 
 
 if __name__ == "__main__":

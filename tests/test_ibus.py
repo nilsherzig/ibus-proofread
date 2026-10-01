@@ -121,6 +121,67 @@ class IBusIntegration(unittest.TestCase):
         self.assertEqual(self.commits, ["diese Nachricht"])
         self.assertFalse(self.candidates)
 
+    def test_shift_question_mark_keeps_sentence_in_one_composition(self):
+        self.type("Ist dise Nachricht richtig")
+        self.assertFalse(self.key(IBus.KEY_Shift_L))
+        self.assertFalse(self.commits)
+        self.assertTrue(self.key(IBus.KEY_question, IBus.ModifierType.SHIFT_MASK))
+        self.assertFalse(self.key(IBus.KEY_Shift_L, IBus.ModifierType.RELEASE_MASK))
+        self.assertFalse(self.commits)
+        wait_until(lambda: bool(self.commits))
+        self.assertEqual(self.commits, ["Ist diese Nachricht richtig?"])
+
+    def test_shift_capital_letter_keeps_words_in_one_composition(self):
+        self.type("dise ")
+        self.assertFalse(self.key(IBus.KEY_Shift_R))
+        self.assertTrue(self.key(IBus.KEY_N, IBus.ModifierType.SHIFT_MASK))
+        self.assertFalse(self.key(IBus.KEY_Shift_R, IBus.ModifierType.RELEASE_MASK))
+        self.type("achricht")
+        self.assertFalse(self.commits)
+        wait_until(lambda: bool(self.commits))
+        self.assertEqual(self.commits, ["diese Nachricht"])
+
+    def test_modifier_classification_does_not_include_text_or_navigation(self):
+        from engine import is_modifier_key
+        for keyval in (IBus.KEY_Shift_L, IBus.KEY_Control_R, IBus.KEY_Caps_Lock,
+                       IBus.KEY_ISO_Level3_Shift, IBus.KEY_ISO_Level5_Lock,
+                       IBus.KEY_Mode_switch, IBus.KEY_Num_Lock):
+            self.assertTrue(is_modifier_key(keyval))
+        for keyval in (IBus.KEY_a, IBus.KEY_question, IBus.KEY_Tab, IBus.KEY_Left,
+                       IBus.KEY_BackSpace, IBus.KEY_F1, IBus.KEY_Return):
+            self.assertFalse(is_modifier_key(keyval))
+
+    def test_modifier_keys_alone_do_not_commit_composition(self):
+        self.type("dise")
+        for keyval, state in (
+            (IBus.KEY_Shift_L, 0), (IBus.KEY_Shift_R, IBus.ModifierType.SHIFT_MASK),
+            (IBus.KEY_Caps_Lock, IBus.ModifierType.LOCK_MASK),
+            (IBus.KEY_ISO_Level3_Shift, IBus.ModifierType.MOD5_MASK),
+            (IBus.KEY_Control_L, IBus.ModifierType.CONTROL_MASK),
+            (IBus.KEY_Alt_L, IBus.ModifierType.MOD1_MASK),
+            (IBus.KEY_Super_L, IBus.ModifierType.MOD4_MASK),
+        ):
+            with self.subTest(keyval=keyval):
+                self.assertFalse(self.key(keyval, state))
+                self.assertFalse(self.commits)
+        self.assertTrue(self.key(IBus.KEY_period))
+        wait_until(lambda: bool(self.commits))
+        self.assertEqual(self.commits, ["diese."])
+
+    def test_actual_control_shortcut_still_commits_original(self):
+        self.type("dise")
+        self.assertFalse(self.key(IBus.KEY_Control_L))
+        self.assertFalse(self.commits)
+        self.assertFalse(self.key(IBus.KEY_x, IBus.ModifierType.CONTROL_MASK))
+        wait_until(lambda: bool(self.commits))
+        self.assertEqual(self.commits, ["dise"])
+
+    def test_navigation_still_commits_original(self):
+        self.type("dise")
+        self.assertFalse(self.key(IBus.KEY_Left))
+        wait_until(lambda: bool(self.commits))
+        self.assertEqual(self.commits, ["dise"])
+
     def test_unchanged_text_also_auto_commits(self):
         self.type("Nachricht")
         wait_until(lambda: bool(self.commits))

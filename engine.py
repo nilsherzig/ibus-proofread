@@ -17,6 +17,13 @@ SENSITIVE_HINTS = IBus.InputHints.PRIVATE | IBus.InputHints.HIDDEN_TEXT
 BYPASS_HINTS = IBus.InputHints.NO_SPELLCHECK | SENSITIVE_HINTS
 
 
+def is_modifier_key(keyval):
+    # Standard XKB keysym classification (IsModifierKey), also used on Wayland.
+    return (IBus.KEY_Shift_L <= keyval <= IBus.KEY_Hyper_R or
+            IBus.KEY_ISO_Lock <= keyval <= IBus.KEY_ISO_Level5_Lock or
+            keyval in (IBus.KEY_Mode_switch, IBus.KEY_Num_Lock))
+
+
 def make_engine(correct):
     class ProofreadEngine(IBus.Engine):
         __gtype_name__ = "GemmaProofreadEngine"
@@ -54,6 +61,9 @@ def make_engine(correct):
                 return False
             if self.bypass:
                 logger.debug("Key passed through: field excluded")
+                return False
+            if is_modifier_key(keyval):
+                logger.debug("Modifier key passed through: keep active composition")
                 return False
             if state & (IBus.ModifierType.CONTROL_MASK | IBus.ModifierType.MOD1_MASK | IBus.ModifierType.MOD4_MASK):
                 self.commit()
