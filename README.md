@@ -2,12 +2,29 @@
 
 A local auto-correction demo using **unsloth/Gemma-4-E2B-it Q4_K_M**, llama.cpp with Vulkan, and an **800 ms typing debounce**. It includes a standalone GTK sandbox and a temporary IBus input method for GNOME/Wayland.
 
-## Try the sandbox
+## Quick start
 
-Run inside your graphical session:
+Requires **x86_64 Linux**, Nix with flakes enabled, and a graphical session. The IBus mode additionally needs a running IBus daemon and an application using IBus (for example GNOME/Wayland). The first launch downloads an approximately 3.1 GB model; a Vulkan-capable GPU is recommended.
+
+Try the standalone sandbox without cloning, inside your graphical session:
 
 ```sh
-cd ~/Documents/projects/ibus-proofread
+nix run github:nilsherzig/ibus-proofread -- demo
+```
+
+For automatic correction in IBus-enabled applications, with decision logs:
+
+```sh
+nix run github:nilsherzig/ibus-proofread -- ibus --verbose
+```
+
+**This is an experimental auto-corrector that can change your text incorrectly.** Try the sandbox before enabling it in other applications.
+
+## Try the sandbox from a checkout
+
+```sh
+git clone https://github.com/nilsherzig/ibus-proofread.git
+cd ibus-proofread
 nix run . -- demo
 ```
 

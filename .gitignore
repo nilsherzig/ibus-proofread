@@ -1,0 +1,20 @@
+# Nix / direnv build artifacts
+/.direnv/
+/result
+/result-*
+
+# Python bytecode and local environments
+__pycache__/
+*.py[cod]
+/.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Downloaded models, temporary files and diagnostics
+*.gguf
+*.partial
+*.log
+
+# Local secrets (the shared .envrc is tracked)
+.env
+.env.*
