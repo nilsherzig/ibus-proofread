@@ -1,0 +1,4 @@
+Translate the text into natural, idiomatic English.
+If the text is already English, correct its spelling, capitalization and punctuation instead.
+Context may be in any language; never translate it.
+Preserve meaning, tone, formatting, names, incomplete sentences and incomplete words.

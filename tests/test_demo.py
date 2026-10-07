@@ -1,5 +1,6 @@
 """GTK auto-correction tests on an owned display, optionally with the real model."""
 import os
+from pathlib import Path
 import threading
 import time
 import unittest
@@ -88,7 +89,8 @@ class DemoTests(unittest.TestCase):
             self.assertEqual(boundary, " Ich komme morgen. ")
             question = Corrector(url, key)("Ist dise Nachicht richtig?")
             self.assertEqual(question, "Ist diese Nachricht richtig?")
-            translated = Corrector(url, key, translate=True)("Ich habe die Nachricht gestern geschrieben. ")
+            translate = (Path(__file__).parents[1] / "example_prompts/translate.txt").read_text()
+            translated = Corrector(url, key, translate)("Ich habe die Nachricht gestern geschrieben. ")
             self.assertEqual(translated, "I wrote the message yesterday. ")
 
 

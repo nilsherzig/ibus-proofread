@@ -62,19 +62,19 @@ The IBus engine requests surrounding-text updates from the application. It sends
 
 Context or cursor/selection changes invalidate pending results and restart the debounce for a nonempty composition. Focus loss clears cached context. Excluded fields ignore context updates entirely. Applications without surrounding-text support still work, but supply no additional context. The standalone sandbox does not have an external surrounding-text source.
 
-## Translation mode
+## Custom prompts
 
-`--translate` switches every mode from proofreading to translation into English:
+`--prompt` replaces the proofreading task with any text transformation. It works in every mode. The default task is [`example_prompts/proofread.txt`](example_prompts/proofread.txt); [`example_prompts/translate.txt`](example_prompts/translate.txt) translates into English:
 
 ![Translating German input to English in a browser field via IBus](docs/translate-demo.gif)
 
 ```sh
-nix run . -- demo --translate
-nix run . -- ibus --translate
-printf 'Ich habe die Nachricht gestern geschrieben.' | nix run . -- check --translate
+nix run . -- demo --prompt "$(cat example_prompts/translate.txt)"
+nix run . -- ibus --prompt "$(cat example_prompts/translate.txt)"
+printf 'hey kannst du mir morgen das dokument schicken' | nix run . -- check --prompt "Rewrite the text in a formal, polite tone. Keep its language."
 ```
 
-Debounce, field exclusions, surrounding context and boundary-whitespace handling work as in proofreading mode. The current composition is replaced by its English translation; text that is already English is proofread instead. Surrounding context is used only for interpretation and is never translated or changed. In IBus mode each composition is translated separately, so pausing mid-sentence translates that fragment on its own.
+The prompt only describes the task. Fixed rules are always appended: the input format, read-only use of surrounding context, boundary whitespace, treating input as data and returning only the replacement text. Debounce, field exclusions and automatic application are the same for every prompt. In IBus mode each composition is transformed separately, so pausing mid-sentence transforms that fragment on its own.
 
 ## Decision logging
 
@@ -98,9 +98,9 @@ The first launch downloads the text GGUF (approximately 3.1 GB) from:
 
 It is cached under `${XDG_DATA_HOME:-~/.local/share}/ibus-proofread/REVISION/`. Downloads are atomic. No vision/audio projector is needed for this text-only demo. The Nix flake pins dependencies, including a Vulkan-enabled llama.cpp. GPU offload is requested; llama.cpp may fall back to CPU on other hardware.
 
-Each launch owns one loopback-only server with a random API key. Typed text is sent only to that local server; it is not uploaded to Hugging Face. Server diagnostics use a temporary log, removed on shutdown. **Corrections are applied automatically and can contain model mistakes.** The prompt explicitly requests spelling, punctuation and uppercase/lowercase corrections, including German noun/sentence capitalization and incorrectly capitalized verbs/adjectives.
+Each launch owns one loopback-only server with a random API key. Typed text is sent only to that local server; it is not uploaded to Hugging Face. Server diagnostics use a temporary log, removed on shutdown. **Corrections are applied automatically and can contain model mistakes.** The default prompt explicitly requests spelling, punctuation and uppercase/lowercase corrections, including German noun/sentence capitalization and incorrectly capitalized verbs/adjectives.
 
-Boundary whitespace is significant. Gemma is instructed to add a leading space when a new sentence needs separation from the previous sentence, avoid duplicate separators, and distinguish sentence/word continuations using context. Existing leading/trailing whitespace is preserved by the inference client even if the model omits it; model-added separators remain intact when none existed. Previously committed context is never changed.
+Boundary whitespace is significant. Gemma uses context to distinguish sentence starts from word/sentence continuations. Existing leading/trailing whitespace is preserved by the inference client even if the model omits it; model-added separators remain intact when none existed. When the context before ends with `.`, `!` or `?` without a separator and the replacement starts with an uppercase letter, the client adds the separating space itself, because small models drop it unreliably. Previously committed context is never changed.
 
 Only one inference runs at a time, with at most one latest debounced request queued. Text changes and focus loss invalidate older results. Inference failures preserve the original text.
 
@@ -109,7 +109,7 @@ Other commands:
 ```sh
 nix run . -- download
 printf 'Ich habe dise Nachicht geschriben.' | nix run . -- check
-printf 'Guten Morgen!' | nix run . -- check --translate
+printf 'Guten Morgen!' | nix run . -- check --prompt "$(cat example_prompts/translate.txt)"
 nix run . -- demo --model /path/to/model.gguf
 nix run . -- --help
 ```

@@ -115,6 +115,14 @@ class DebounceTests(unittest.TestCase):
         self.assertEqual(preserve_boundary_whitespace("word", " Word"), " Word")
         self.assertEqual(preserve_boundary_whitespace("word ", "Word   "), "Word ")
 
+    def test_sentence_start_after_terminated_context_gets_separator(self):
+        self.assertEqual(preserve_boundary_whitespace("ich komme. ", "Ich komme. ", "Gut."), " Ich komme. ")
+        self.assertEqual(preserve_boundary_whitespace("ich", " Ich", "Gut."), " Ich")
+        self.assertEqual(preserve_boundary_whitespace(" ich", "Ich", "Gut."), " Ich")
+        self.assertEqual(preserve_boundary_whitespace("com", "com", "example."), "com")
+        self.assertEqual(preserve_boundary_whitespace("icht", "icht", "Nachr"), "icht")
+        self.assertEqual(preserve_boundary_whitespace("Haus", "Haus", "das "), "Haus")
+
     def test_surrounding_context_is_bounded_and_excludes_selection(self):
         text = "a" * 600 + "selected" + "b" * 600
         expected = SurroundingContext("a" * 400, "b" * 400)
