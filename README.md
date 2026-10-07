@@ -2,6 +2,8 @@
 
 A local auto-correction demo using **unsloth/Gemma-4-E2B-it Q4_K_M**, llama.cpp with Vulkan, and an **800 ms typing debounce**. It includes a standalone GTK sandbox and a temporary IBus input method for GNOME/Wayland.
 
+![Proofreading German text in a browser field via IBus](docs/proofread-demo.gif)
+
 ## Quick start
 
 Requires **x86_64 Linux**, Nix with flakes enabled, and a graphical session. The IBus mode additionally needs a running IBus daemon and an application using IBus (for example GNOME/Wayland). The first launch downloads an approximately 3.1 GB model; a Vulkan-capable GPU is recommended.
@@ -63,6 +65,8 @@ Context or cursor/selection changes invalidate pending results and restart the d
 ## Translation mode
 
 `--translate` switches every mode from proofreading to translation into English:
+
+![Translating German input to English in a browser field via IBus](docs/translate-demo.gif)
 
 ```sh
 nix run . -- demo --translate
