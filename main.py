@@ -12,6 +12,7 @@ def main():
     parser.add_argument("mode", choices=["demo", "ibus", "download", "check"], nargs="?", default="demo")
     parser.add_argument("--model", help="Use an existing GGUF instead of the pinned default")
     parser.add_argument("--llama-server", default="llama-server", help="Override server binary")
+    parser.add_argument("--translate", action="store_true", help="Translate input to English instead of proofreading")
     parser.add_argument("--verbose", action="store_true", help="Log debounce and input decisions, without typed text")
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
@@ -20,9 +21,10 @@ def main():
     if args.mode == "download":
         print(model)
         return
-    logging.getLogger("proofread").info("Loading Gemma locally; mode=%s", args.mode)
+    logging.getLogger("proofread").info("Loading Gemma locally; mode=%s task=%s",
+                                        args.mode, "translate" if args.translate else "proofread")
     with server(model, args.llama_server) as (url, key):
-        correct = Corrector(url, key)
+        correct = Corrector(url, key, translate=args.translate)
         if args.mode == "check":
             print(correct(sys.stdin.read()))
         elif args.mode == "ibus":

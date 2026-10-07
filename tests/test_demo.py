@@ -88,6 +88,8 @@ class DemoTests(unittest.TestCase):
             self.assertEqual(boundary, " Ich komme morgen. ")
             question = Corrector(url, key)("Ist dise Nachicht richtig?")
             self.assertEqual(question, "Ist diese Nachricht richtig?")
+            translated = Corrector(url, key, translate=True)("Ich habe die Nachricht gestern geschrieben. ")
+            self.assertEqual(translated, "I wrote the message yesterday. ")
 
 
 if __name__ == "__main__":

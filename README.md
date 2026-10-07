@@ -60,6 +60,18 @@ The IBus engine requests surrounding-text updates from the application. It sends
 
 Context or cursor/selection changes invalidate pending results and restart the debounce for a nonempty composition. Focus loss clears cached context. Excluded fields ignore context updates entirely. Applications without surrounding-text support still work, but supply no additional context. The standalone sandbox does not have an external surrounding-text source.
 
+## Translation mode
+
+`--translate` switches every mode from proofreading to translation into English:
+
+```sh
+nix run . -- demo --translate
+nix run . -- ibus --translate
+printf 'Ich habe die Nachricht gestern geschrieben.' | nix run . -- check --translate
+```
+
+Debounce, field exclusions, surrounding context and boundary-whitespace handling work as in proofreading mode. The current composition is replaced by its English translation; text that is already English is proofread instead. Surrounding context is used only for interpretation and is never translated or changed. In IBus mode each composition is translated separately, so pausing mid-sentence translates that fragment on its own.
+
 ## Decision logging
 
 Logs appear in the launching terminal on stderr. Every field-entry event logs its reported purpose/hints or explicitly `type missing (not reported yet)`; later type reports are logged as updates. Normal logging includes field purpose/hints, proofreading versus bypass decisions, inference start/completion/duration, stale-result rejection, composition commits and server lifecycle. For per-key bypass decisions, context/cursor metadata and debounce scheduling/invalidation details:
@@ -93,6 +105,7 @@ Other commands:
 ```sh
 nix run . -- download
 printf 'Ich habe dise Nachicht geschriben.' | nix run . -- check
+printf 'Guten Morgen!' | nix run . -- check --translate
 nix run . -- demo --model /path/to/model.gguf
 nix run . -- --help
 ```
@@ -105,7 +118,7 @@ nix develop --command python tests/run.py
 PROOFREAD_TEST_MODEL=1 nix develop --command python tests/run.py
 ```
 
-The runner owns a virtual X display and a private session bus/IBus daemon. It does not inject keys into the real desktop. Tests cover debounce replacement, stale-result invalidation including context changes, bounded queuing, failures, metadata-only logs, boundary-whitespace preservation, GTK automatic replacement/cancellation, and real IBus activation/automatic commits/field exclusions/surrounding-text delivery, and physical modifier sequences for punctuation/capital letters versus actual shortcuts and navigation. The real-model test checks spelling, German capitalization and sentence-boundary spacing. The real-model test expects the cached default GGUF; run `download` first.
+The runner owns a virtual X display and a private session bus/IBus daemon. It does not inject keys into the real desktop. Tests cover debounce replacement, stale-result invalidation including context changes, bounded queuing, failures, metadata-only logs, boundary-whitespace preservation, GTK automatic replacement/cancellation, and real IBus activation/automatic commits/field exclusions/surrounding-text delivery, and physical modifier sequences for punctuation/capital letters versus actual shortcuts and navigation. The real-model test checks spelling, German capitalization, sentence-boundary spacing and translation into English. The real-model test expects the cached default GGUF; run `download` first.
 
 ## Flow
 
